@@ -96,6 +96,43 @@ app.get('/api/events/:calendar_id', async (req, res) => {
   }
 });
 
+// Editar evento
+app.put('/api/events/:id', async (req, res) => {
+  const { title, description, start_time, end_time } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE events
+       SET title = $1, description = $2, start_time = $3, end_time = $4
+       WHERE id = $5 RETURNING *`,
+      [title, description, start_time, end_time, req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Evento não encontrado' });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao editar evento' });
+  }
+});
+
+// Apagar evento
+app.delete('/api/events/:id', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'DELETE FROM events WHERE id = $1 RETURNING *',
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Evento não encontrado' });
+    }
+    res.json({ message: 'Evento apagado com sucesso' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao apagar evento' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor a correr em http://localhost:${PORT}`);
