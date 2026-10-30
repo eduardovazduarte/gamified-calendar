@@ -1,41 +1,56 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import FullCalendar from '@fullcalendar/react';
+import themePlugin from '@fullcalendar/react/themes/classic';
+import dayGridPlugin from '@fullcalendar/react/daygrid';
+import timeGridPlugin from '@fullcalendar/react/timegrid';
+import interactionPlugin from '@fullcalendar/react/interaction';
+
+import '@fullcalendar/react/skeleton.css';
+import '@fullcalendar/react/themes/classic/theme.css';
+import '@fullcalendar/react/themes/classic/palette.css';
 import './App.css';
 
 const API_URL = 'http://localhost:3000/api';
-
 const emptyForm = { title: '', description: '', start_time: '', end_time: '' };
 
 function App() {
   const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
+  const [showForm, setShowForm] = useState(false);
 
   const loadEvents = () => {
-    axios.get(`${API_URL}/events/1`)
-      .then((res) => {
-        setEvents(res.data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setLoading(false);
-      });
+    axios.get(`${API_URL}/events/1`).then((res) => setEvents(res.data));
   };
 
   useEffect(() => {
     loadEvents();
   }, []);
 
-  const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
-  };
+  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
-  // Converte "2026-11-15T09:00:00.000Z" para o formato que o input datetime-local espera
   const toInputFormat = (isoString) => isoString.slice(0, 16);
 
-  const handleEditClick = (event) => {
+  const openNewEvent = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setShowForm(true);
+  };
+
+  const handleDateClick = (info) => {
+    setEditingId(null);
+    setForm({
+      ...emptyForm,
+      start_time: info.dateStr + 'T09:00',
+      end_time: info.dateStr + 'T10:00',
+    });
+    setShowForm(true);
+  };
+
+  const handleEventClick = (info) => {
+    const event = events.find((e) => String(e.id) === info.event.id);
+    if (!event) return;
     setEditingId(event.id);
     setForm({
       title: event.title,
@@ -43,108 +58,111 @@ function App() {
       start_time: toInputFormat(event.start_time),
       end_time: toInputFormat(event.end_time),
     });
+    setShowForm(true);
   };
 
-  const handleCancelEdit = () => {
+  const closeForm = () => {
+    setShowForm(false);
     setEditingId(null);
     setForm(emptyForm);
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    const request = editingId
+      ? axios.put(`${API_URL}/events/${editingId}`, form)
+      : axios.post(`${API_URL}/events`, { calendar_id: 1, ...form });
 
-    if (editingId) {
-      axios.put(`${API_URL}/events/${editingId}`, form)
-        .then(() => {
-          setEditingId(null);
-          setForm(emptyForm);
-          loadEvents();
-        })
-        .catch((err) => console.error(err));
-    } else {
-      axios.post(`${API_URL}/events`, { calendar_id: 1, ...form })
-        .then(() => {
-          setForm(emptyForm);
-          loadEvents();
-        })
-        .catch((err) => console.error(err));
-    }
+    request.then(() => {
+      loadEvents();
+      closeForm();
+    });
   };
 
-  const handleDelete = (id) => {
-    axios.delete(`${API_URL}/events/${id}`)
-      .then(() => loadEvents())
-      .catch((err) => console.error(err));
+  const handleDelete = () => {
+    axios.delete(`${API_URL}/events/${editingId}`).then(() => {
+      loadEvents();
+      closeForm();
+    });
   };
+
+  const calendarEvents = events.map((e) => ({
+    id: String(e.id),
+    title: e.title,
+    start: e.start_time,
+    end: e.end_time,
+  }));
 
   return (
-    <div style={{ maxWidth: 600, margin: '0 auto', padding: 20 }}>
-      <h1>O meu calendário</h1>
+    <div className="page">
+      <div className="calendar-wrapper">
+        <FullCalendar
+          plugins={[themePlugin, dayGridPlugin, timeGridPlugin, interactionPlugin]}
+          initialView="dayGridMonth"
+          headerToolbar={{
+            left: 'addEvent prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,timeGridWeek,timeGridDay',
+          }}
+          buttons={{
+            addEvent: {
+              text: '+ Novo evento',
+              click: openNewEvent,
+            },
+          }}
+          buttonClass={(info) =>
+            info.isSelected ? 'my-button my-button-active' : 'my-button'
+          }
 
-      <form onSubmit={handleSubmit} style={{ marginBottom: 30 }}>
-        <h3>{editingId ? 'Editar evento' : 'Novo evento'}</h3>
-        <div>
-          <input
-            name="title"
-            placeholder="Título"
-            value={form.title}
-            onChange={handleChange}
-            required
-          />
-        </div>
-        <div>
-          <input
-            name="description"
-            placeholder="Descrição"
-            value={form.description}
-            onChange={handleChange}
-          />
-        </div>
-        <div>
-          Início: <input
-            type="datetime-local"
-            name="start_time"
-            value={form.start_time}
-            onChange={handleChange}
-            required
-          />
-        </div>
-        <div>
-          Fim: <input
-            type="datetime-local"
-            name="end_time"
-            value={form.end_time}
-            onChange={handleChange}
-            required
-          />
-        </div>
-        <button type="submit">{editingId ? 'Guardar alterações' : 'Criar evento'}</button>
-        {editingId && (
-          <button type="button" onClick={handleCancelEdit} style={{ marginLeft: 10 }}>
-            Cancelar
-          </button>
-        )}
-      </form>
+          dayCellClass="my-cell"
+          dayCellTopClass="my-day-top"
+          events={calendarEvents}
+          dateClick={handleDateClick}
+          eventClick={handleEventClick}
+          height="100%"
+        />
+      </div>
 
-      {loading ? (
-        <p>A carregar eventos...</p>
-      ) : events.length === 0 ? (
-        <p>Ainda não tens eventos.</p>
-      ) : (
-        <ul>
-          {events.map((event) => (
-            <li key={event.id} style={{ marginBottom: 10 }}>
-              <strong>{event.title}</strong><br />
-              {new Date(event.start_time).toLocaleString('pt-PT')} até{' '}
-              {new Date(event.end_time).toLocaleString('pt-PT')}
-              <br />
-              <button onClick={() => handleEditClick(event)}>Editar</button>
-              <button onClick={() => handleDelete(event.id)} style={{ marginLeft: 5 }}>
-                Apagar
-              </button>
-            </li>
-          ))}
-        </ul>
+      {showForm && (
+        <div className="modal-overlay" onClick={closeForm}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>{editingId ? 'Editar evento' : 'Novo evento'}</h3>
+            <form onSubmit={handleSubmit}>
+              <input
+                name="title"
+                placeholder="Título"
+                value={form.title}
+                onChange={handleChange}
+                required
+              />
+              <input
+                name="description"
+                placeholder="Descrição"
+                value={form.description}
+                onChange={handleChange}
+              />
+              <label>Início
+                <input type="datetime-local" name="start_time" value={form.start_time} onChange={handleChange} required />
+              </label>
+              <label>Fim
+                <input type="datetime-local" name="end_time" value={form.end_time} onChange={handleChange} required />
+              </label>
+              <div className="modal-actions">
+                <button type="submit" className="btn-primary">
+                  {editingId ? 'Guardar' : 'Criar'}
+                </button>
+                {editingId && (
+                  <button type="button" className="btn-danger" onClick={handleDelete}>
+                    Apagar
+                  </button>
+                )}
+                <button type="button" className="btn-secondary" onClick={closeForm}>
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
