@@ -95,6 +95,13 @@ app.delete('/api/calendars/:id', async (req, res) => {
   }
 });
 
+const RRULE_PATTERN = /^FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(;[A-Z]+=[A-Z0-9,+-]+)*$/;
+
+function normalizeRrule(value) {
+  if (value === undefined || value === null || value === '') return null;
+  return typeof value === 'string' && RRULE_PATTERN.test(value) ? value : false;
+}
+
 // ---------- EVENTOS ----------
 
 // Listar eventos de um calendário
@@ -117,14 +124,18 @@ app.get('/api/events/:calendar_id', async (req, res) => {
 // Criar evento
 app.post('/api/events', async (req, res) => {
   const { calendar_id, title, description, start_time, end_time } = req.body;
+  const rrule = normalizeRrule(req.body.rrule);
+  if (rrule === false) {
+    return res.status(400).json({ error: 'Regra de repetição inválida' });
+  }
   try {
     if (!(await ownsCalendar(calendar_id, req.user.id))) {
       return res.status(404).json({ error: 'Calendário não encontrado' });
     }
     const result = await pool.query(
-      `INSERT INTO events (calendar_id, title, description, start_time, end_time)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [calendar_id, title, description, start_time, end_time]
+      `INSERT INTO events (calendar_id, title, description, start_time, end_time, rrule)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [calendar_id, title, description, start_time, end_time, rrule]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -136,14 +147,18 @@ app.post('/api/events', async (req, res) => {
 // Editar evento
 app.put('/api/events/:id', async (req, res) => {
   const { title, description, start_time, end_time } = req.body;
+  const rrule = normalizeRrule(req.body.rrule);
+  if (rrule === false) {
+    return res.status(400).json({ error: 'Regra de repetição inválida' });
+  }
   try {
     const result = await pool.query(
       `UPDATE events
-       SET title = $1, description = $2, start_time = $3, end_time = $4
-       WHERE id = $5
-         AND calendar_id IN (SELECT id FROM calendars WHERE owner_id = $6)
+       SET title = $1, description = $2, start_time = $3, end_time = $4, rrule = $5
+       WHERE id = $6
+         AND calendar_id IN (SELECT id FROM calendars WHERE owner_id = $7)
        RETURNING *`,
-      [title, description, start_time, end_time, req.params.id, req.user.id]
+      [title, description, start_time, end_time, rrule, req.params.id, req.user.id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Evento não encontrado' });

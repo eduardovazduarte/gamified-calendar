@@ -22,5 +22,6 @@ CREATE TABLE events (
   description TEXT,
   start_time TIMESTAMP NOT NULL,
   end_time TIMESTAMP NOT NULL,
+  rrule TEXT,
   created_at TIMESTAMP DEFAULT NOW()
 );

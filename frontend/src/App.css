@@ -269,3 +269,12 @@ html, body, #root {
   text-align: center;
   padding: 40px;
 }
+
+.modal select {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  width: 100%;
+  background: white;
+}
