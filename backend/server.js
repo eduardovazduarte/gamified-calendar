@@ -170,19 +170,73 @@ app.put('/api/events/:id', async (req, res) => {
   }
 });
 
-// Apagar evento
+// ---------- APAGAR EVENTOS (com repetições) ----------
+
+const OCCURRENCE_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
+
+// "2026-11-10" -> "2026-11-09"
+function dayBefore(isoDay) {
+  const d = new Date(`${isoDay}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// Põe um UNTIL na regra. O COUNT sai, porque não pode coexistir com o UNTIL.
+function rruleWithUntil(rrule, untilDay) {
+  const parts = rrule
+    .split(';')
+    .filter(Boolean)
+    .map((p) => p.split('='))
+    .filter(([key]) => key !== 'COUNT' && key !== 'UNTIL');
+  parts.push(['UNTIL', `${untilDay.replace(/-/g, '')}T235959`]);
+  return parts.map(([key, value]) => `${key}=${value}`).join(';');
+}
+
 app.delete('/api/events/:id', async (req, res) => {
   try {
-    const result = await pool.query(
-      `DELETE FROM events
+    const scope = req.query.scope || 'all';
+    const occurrence = req.query.occurrence;
+
+    // Procura o evento (só se for do utilizador autenticado)
+    const found = await pool.query(
+      `SELECT *, to_char(start_time, 'YYYY-MM-DD') AS start_day
+       FROM events
        WHERE id = $1
-         AND calendar_id IN (SELECT id FROM calendars WHERE owner_id = $2)
-       RETURNING *`,
+         AND calendar_id IN (SELECT id FROM calendars WHERE owner_id = $2)`,
       [req.params.id, req.user.id]
     );
-    if (result.rows.length === 0) {
+    if (found.rows.length === 0) {
       return res.status(404).json({ error: 'Evento não encontrado' });
     }
+    const event = found.rows[0];
+
+    // "só esta" e "esta e seguintes" só fazem sentido em eventos repetidos
+    if ((scope === 'this' || scope === 'following') && event.rrule) {
+      if (!OCCURRENCE_PATTERN.test(occurrence || '')) {
+        return res.status(400).json({ error: 'Ocorrência inválida' });
+      }
+
+      if (scope === 'this') {
+        await pool.query(
+          'UPDATE events SET exdates = array_append(exdates, $1) WHERE id = $2',
+          [occurrence, event.id]
+        );
+        return res.json({ message: 'Ocorrência apagada com sucesso' });
+      }
+
+      // scope === 'following': corta a série no dia anterior
+      const untilDay = dayBefore(occurrence.slice(0, 10));
+      if (untilDay >= event.start_day) {
+        await pool.query('UPDATE events SET rrule = $1 WHERE id = $2', [
+          rruleWithUntil(event.rrule, untilDay),
+          event.id,
+        ]);
+        return res.json({ message: 'Ocorrências apagadas com sucesso' });
+      }
+      // se não sobra nenhuma ocorrência antes desta, apaga o evento todo
+    }
+
+    await pool.query('DELETE FROM events WHERE id = $1', [event.id]);
     res.json({ message: 'Evento apagado com sucesso' });
   } catch (err) {
     console.error(err);

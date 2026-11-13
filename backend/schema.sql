@@ -23,5 +23,6 @@ CREATE TABLE events (
   start_time TIMESTAMP NOT NULL,
   end_time TIMESTAMP NOT NULL,
   rrule TEXT,
+  exdates TEXT[] DEFAULT '{}',
   created_at TIMESTAMP DEFAULT NOW()
 );

@@ -278,3 +278,47 @@ html, body, #root {
   width: 100%;
   background: white;
 }
+/* seletor de dias da semana */
+.modal .weekday-picker {
+  display: flex;
+  gap: 4px;
+}
+
+.modal .weekday-picker label {
+  position: relative;
+  flex: 1;
+  flex-direction: row;
+  justify-content: center;
+  padding: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.modal .weekday-picker input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.modal .weekday-picker label:has(input:checked) {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+.modal .delete-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.modal .delete-scope p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+}

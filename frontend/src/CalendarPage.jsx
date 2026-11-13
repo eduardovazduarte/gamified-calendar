@@ -21,11 +21,19 @@ const emptyForm = {
   repeat: 'none',
   repeat_until: '',
   base_rrule: '',
+  byday: [],
+  bymonthday: '',
 };
 
 // A BD devolve "2026-11-03 18:00:00" (sem fuso) -> "2026-11-03T18:00:00"
 const toIso = (s) => s.replace(' ', 'T').slice(0, 19);
 const toInputFormat = (s) => toIso(s).slice(0, 16);
+
+// Date (hora local) -> "2026-11-10T18:00:00"
+const toLocalIso = (d) => {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+};
 
 // "FREQ=WEEKLY;BYDAY=TU,TH" -> { FREQ: 'WEEKLY', BYDAY: 'TU,TH' }
 const parseRrule = (rrule) =>
@@ -33,12 +41,35 @@ const parseRrule = (rrule) =>
     (rrule || '').split(';').filter(Boolean).map((p) => p.split('='))
   );
 
+const WEEKDAYS = [
+  ['MO', 'Seg'], ['TU', 'Ter'], ['WE', 'Qua'], ['TH', 'Qui'],
+  ['FR', 'Sex'], ['SA', 'Sáb'], ['SU', 'Dom'],
+];
+
+// "1, 10, 40, x" -> "1,10" (só dias válidos, de 1 a 31)
+const cleanMonthDays = (text) =>
+  (text || '')
+    .split(',')
+    .map((d) => d.trim())
+    .filter((d) => /^([1-9]|[12]\d|3[01])$/.test(d))
+    .join(',');
+
 // Constrói a RRULE a partir do formulário.
 // Mantém parâmetros extra (ex: BYDAY) se a frequência não foi alterada.
-const buildRrule = (repeat, untilDate, baseRrule) => {
+const buildRrule = (repeat, untilDate, baseRrule, byday = [], bymonthday = '') => {
   if (repeat === 'none') return null;
   const base = parseRrule(baseRrule);
   const parts = base.FREQ === repeat ? { ...base } : { FREQ: repeat };
+
+  if (repeat === 'WEEKLY') {
+    if (byday.length) parts.BYDAY = byday.join(',');
+    else delete parts.BYDAY;
+  }
+  if (repeat === 'MONTHLY') {
+    const days = cleanMonthDays(bymonthday);
+    if (days) parts.BYMONTHDAY = days;
+    else delete parts.BYMONTHDAY;
+  }
 
   if (untilDate) {
     delete parts.COUNT;
@@ -60,6 +91,8 @@ export default function CalendarPage() {
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [occurrence, setOccurrence] = useState('');
+  const [askDeleteScope, setAskDeleteScope] = useState(false);
 
   // Descobre o calendário do utilizador (cria um se ainda não existir)
   useEffect(() => {
@@ -84,6 +117,14 @@ export default function CalendarPage() {
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
+  const toggleWeekday = (code) =>
+    setForm((f) => {
+      const set = new Set(f.byday);
+      if (set.has(code)) set.delete(code);
+      else set.add(code);
+      return { ...f, byday: WEEKDAYS.map(([c]) => c).filter((c) => set.has(c)) };
+    });
+
   const openNewEvent = () => {
     setEditingId(null);
     setForm(emptyForm);
@@ -105,6 +146,7 @@ export default function CalendarPage() {
     if (!event) return;
     const rule = parseRrule(event.rrule);
     setEditingId(event.id);
+    setOccurrence(toLocalIso(info.event.start));
     setForm({
       title: event.title,
       description: event.description || '',
@@ -113,6 +155,8 @@ export default function CalendarPage() {
       repeat: rule.FREQ || 'none',
       repeat_until: untilToInput(rule.UNTIL),
       base_rrule: event.rrule || '',
+      byday: rule.BYDAY ? rule.BYDAY.split(',') : [],
+      bymonthday: rule.BYMONTHDAY || '',
     });
     setShowForm(true);
   };
@@ -121,6 +165,8 @@ export default function CalendarPage() {
     setShowForm(false);
     setEditingId(null);
     setForm(emptyForm);
+    setOccurrence('');
+    setAskDeleteScope(false);
   };
 
   const handleSubmit = (e) => {
@@ -130,7 +176,7 @@ export default function CalendarPage() {
       description: form.description,
       start_time: form.start_time,
       end_time: form.end_time,
-      rrule: buildRrule(form.repeat, form.repeat_until, form.base_rrule),
+      rrule: buildRrule(form.repeat, form.repeat_until, form.base_rrule, form.byday, form.bymonthday),
     };
 
     const request = editingId
@@ -143,11 +189,19 @@ export default function CalendarPage() {
     });
   };
 
+  const deleteEvent = (scope = 'all') => {
+    api
+      .delete(`/events/${editingId}`, { params: { scope, occurrence } })
+      .then(() => {
+        loadEvents();
+        closeForm();
+      });
+  };
+
   const handleDelete = () => {
-    api.delete(`/events/${editingId}`).then(() => {
-      loadEvents();
-      closeForm();
-    });
+    // evento repetido: pergunta primeiro o que apagar
+    if (form.base_rrule) setAskDeleteScope(true);
+    else deleteEvent();
   };
 
   const calendarEvents = useMemo(
@@ -165,6 +219,7 @@ export default function CalendarPage() {
           id: String(e.id),
           title: e.title,
           rrule: `DTSTART:${start.replace(/[-:]/g, '')}\nRRULE:${e.rrule}`,
+          exdate: e.exdates || [],
           duration: { minutes },
         };
       }),
@@ -245,11 +300,58 @@ export default function CalendarPage() {
                 </select>
               </label>
 
+              {form.repeat === 'WEEKLY' && (
+                <div className="weekday-picker">
+                  {WEEKDAYS.map(([code, label]) => (
+                    <label key={code}>
+                      <input
+                        type="checkbox"
+                        checked={form.byday.includes(code)}
+                        onChange={() => toggleWeekday(code)}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {form.repeat === 'MONTHLY' && (
+                <label>Dias do mês (ex: 1,10)
+                  <input
+                    name="bymonthday"
+                    placeholder="Vazio = mesmo dia do evento"
+                    value={form.bymonthday}
+                    onChange={handleChange}
+                  />
+                </label>
+              )}
+
               {form.repeat !== 'none' && (
                 <label>Repetir até (opcional)
                   <input type="date" name="repeat_until" value={form.repeat_until} onChange={handleChange} />
                 </label>
               )}
+
+
+              {askDeleteScope && (
+              <div className="delete-scope">
+                <p>Apagar evento repetido:</p>
+                <button type="button" className="btn-secondary" onClick={() => deleteEvent('this')}>
+                  Só este evento
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => deleteEvent('following')}>
+                  Este e os seguintes
+                </button>
+                <button type="button" className="btn-danger" onClick={() => deleteEvent('all')}>
+                  Todos os eventos
+                </button>
+                <button type="button" className="link-button" onClick={() => setAskDeleteScope(false)}>
+                  Voltar
+                </button>
+              </div>
+            )}
+
+
 
               <div className="modal-actions">
                 <button type="submit" className="btn-primary">
