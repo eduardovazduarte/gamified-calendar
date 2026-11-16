@@ -404,3 +404,27 @@ html, body, #root {
 .sidebar .btn-secondary {
   margin-top: 8px;
 }
+
+.modal .done-toggle {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.modal .done-toggle input {
+  width: auto;
+}
+
+.event-done {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.done-icon {
+  display: inline-block;
+  margin-right: 4px;
+  font-weight: 700;
+}

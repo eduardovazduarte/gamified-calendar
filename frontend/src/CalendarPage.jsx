@@ -92,6 +92,7 @@ export default function CalendarPage() {
   const [calendars, setCalendars] = useState([]);
   const [hidden, setHidden] = useState([]);
   const [colorFor, setColorFor] = useState(null);
+  const [completions, setCompletions] = useState([]); // strings "idEvento|ocorrência"
   const calendarsRef = useRef([]);
   const hiddenRef = useRef([]);
   calendarsRef.current = calendars;
@@ -118,15 +119,35 @@ export default function CalendarPage() {
     api.get('/events').then((res) => setEvents(res.data));
   }, []);
 
+    const loadCompletions = useCallback(() => {
+    api.get('/completions').then((res) =>
+      setCompletions(res.data.map((c) => `${c.event_id}|${c.occurrence}`))
+    );
+  }, []);
+
+  const isDone = (eventId, date) =>
+    completions.includes(`${eventId}|${toLocalIso(date)}`);
+
   useEffect(() => {
     loadCalendars();
     loadEvents();
-  }, [loadCalendars, loadEvents]);
+    loadCompletions();
+  }, [loadCalendars, loadEvents, loadCompletions]);
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
-    const toggleCalendar = (id) =>
-    setHidden((h) => (h.includes(id) ? h.filter((x) => x !== id) : [...h, id]));
+  const toggleCalendar = (id) =>
+  setHidden((h) => (h.includes(id) ? h.filter((x) => x !== id) : [...h, id]));
+
+    const toggleDone = () => {
+    const done = completions.includes(`${editingId}|${occurrence}`);
+    const request = done
+      ? api.delete(`/events/${editingId}/complete`, { params: { occurrence } })
+      : api.post(`/events/${editingId}/complete`, { occurrence });
+    request
+      .then(loadCompletions)
+      .catch(() => alert('Não foi possível atualizar o estado do evento.'));
+  };
 
   const createCalendar = () => {
     const name = window.prompt('Nome do novo calendário:');
@@ -372,6 +393,18 @@ export default function CalendarPage() {
           dayCellTopClass="my-day-top"
           events={calendarEvents}
           dateClick={handleDateClick}
+                    eventClass={(arg) =>
+            isDone(arg.event.id, arg.event.start) ? ['event-done'] : []
+          }
+          eventContent={(arg) => (
+            <>
+              {isDone(arg.event.id, arg.event.start) && (
+                <span className="done-icon">✓</span>
+              )}
+              {arg.timeText && <b>{arg.timeText} </b>}
+              <span>{arg.event.title}</span>
+            </>
+          )}
           eventClick={handleEventClick}
           height="100%"
         />
@@ -408,6 +441,17 @@ export default function CalendarPage() {
                   ))}
                 </select>
               </label>
+
+              {editingId && (
+                <label className="done-toggle">
+                  <input
+                    type="checkbox"
+                    checked={completions.includes(`${editingId}|${occurrence}`)}
+                    onChange={toggleDone}
+                  />
+                  {form.base_rrule ? 'Esta ocorrência está concluída' : 'Concluído'}
+                </label>
+              )}
 
               <label>Início
                 <input type="datetime-local" name="start_time" value={form.start_time} onChange={handleChange} required />

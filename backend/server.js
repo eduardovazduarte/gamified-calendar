@@ -273,6 +273,82 @@ app.delete('/api/events/:id', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+// ---------- CONCLUSÃO DE EVENTOS ----------
+
+// Verifica se um evento pertence ao utilizador
+async function ownsEvent(eventId, userId) {
+  const result = await pool.query(
+    `SELECT 1 FROM events e
+     JOIN calendars c ON c.id = e.calendar_id
+     WHERE e.id = $1 AND c.owner_id = $2`,
+    [eventId, userId]
+  );
+  return result.rowCount > 0;
+}
+
+// Todas as conclusões do utilizador
+app.get('/api/completions', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT ec.event_id, ec.occurrence
+       FROM event_completions ec
+       JOIN events e ON e.id = ec.event_id
+       JOIN calendars c ON c.id = e.calendar_id
+       WHERE c.owner_id = $1`,
+      [req.user.id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao buscar conclusões' });
+  }
+});
+
+// Marcar uma ocorrência como concluída
+app.post('/api/events/:id/complete', async (req, res) => {
+  const { occurrence } = req.body;
+  if (!OCCURRENCE_PATTERN.test(occurrence || '')) {
+    return res.status(400).json({ error: 'Ocorrência inválida' });
+  }
+  try {
+    if (!(await ownsEvent(req.params.id, req.user.id))) {
+      return res.status(404).json({ error: 'Evento não encontrado' });
+    }
+    await pool.query(
+      `INSERT INTO event_completions (event_id, occurrence)
+       VALUES ($1, $2)
+       ON CONFLICT (event_id, occurrence) DO NOTHING`,
+      [req.params.id, occurrence]
+    );
+    res.status(201).json({ message: 'Evento concluído' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao concluir evento' });
+  }
+});
+
+// Desmarcar uma ocorrência
+app.delete('/api/events/:id/complete', async (req, res) => {
+  const occurrence = req.query.occurrence;
+  if (!OCCURRENCE_PATTERN.test(occurrence || '')) {
+    return res.status(400).json({ error: 'Ocorrência inválida' });
+  }
+  try {
+    if (!(await ownsEvent(req.params.id, req.user.id))) {
+      return res.status(404).json({ error: 'Evento não encontrado' });
+    }
+    await pool.query(
+      'DELETE FROM event_completions WHERE event_id = $1 AND occurrence = $2',
+      [req.params.id, occurrence]
+    );
+    res.json({ message: 'Conclusão removida' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao remover conclusão' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Servidor a correr em http://localhost:${PORT}`);
 });

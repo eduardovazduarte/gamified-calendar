@@ -27,3 +27,12 @@ CREATE TABLE events (
   exdates TEXT[] DEFAULT '{}',
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+
+CREATE TABLE event_completions (
+  id SERIAL PRIMARY KEY,
+  event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  occurrence TEXT NOT NULL,
+  completed_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE (event_id, occurrence)
+);
