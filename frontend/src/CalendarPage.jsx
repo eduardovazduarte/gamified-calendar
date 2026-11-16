@@ -95,8 +95,6 @@ export default function CalendarPage() {
   const [completions, setCompletions] = useState([]); // strings "idEvento|ocorrência"
   const calendarsRef = useRef([]);
   const hiddenRef = useRef([]);
-  calendarsRef.current = calendars;
-  hiddenRef.current = hidden;
   const [events, setEvents] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
@@ -104,15 +102,21 @@ export default function CalendarPage() {
   const [occurrence, setOccurrence] = useState('');
   const [askDeleteScope, setAskDeleteScope] = useState(false);
 
-  const loadCalendars = useCallback(async () => {
-    const res = await api.get('/calendars');
-    if (res.data.length > 0) {
-      setCalendars(res.data);
-    } else {
-      const created = await api.post('/calendars', { name: 'Calendário Pessoal' });
-      setCalendars([created.data]);
-    }
+  const loadCalendars = useCallback(() => {
+    api.get('/calendars').then(async (res) => {
+      if (res.data.length > 0) {
+        setCalendars(res.data);
+      } else {
+        const created = await api.post('/calendars', { name: 'Calendário Pessoal' });
+        setCalendars([created.data]);
+      }
+    });
   }, []);
+
+  useEffect(() => {
+    calendarsRef.current = calendars;
+    hiddenRef.current = hidden;
+  }, [calendars, hidden]);
 
   // Eventos de todos os calendários; o filtro por calendário é feito no frontend
   const loadEvents = useCallback(() => {
