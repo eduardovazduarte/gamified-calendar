@@ -28,6 +28,8 @@ async function ownsCalendar(calendarId, userId) {
   return result.rowCount > 0;
 }
 
+const COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+
 // ---------- CALENDÁRIOS ----------
 
 // Listar os calendários do utilizador
@@ -44,16 +46,19 @@ app.get('/api/calendars', async (req, res) => {
   }
 });
 
-// Criar calendário
 app.post('/api/calendars', async (req, res) => {
-  const { name } = req.body;
+  const { name, color } = req.body;
   if (!name) {
     return res.status(400).json({ error: 'O nome é obrigatório' });
   }
+  if (color && !COLOR_PATTERN.test(color)) {
+    return res.status(400).json({ error: 'Cor inválida' });
+  }
   try {
     const result = await pool.query(
-      'INSERT INTO calendars (name, owner_id) VALUES ($1, $2) RETURNING *',
-      [name, req.user.id]
+      `INSERT INTO calendars (name, owner_id, color)
+       VALUES ($1, $2, COALESCE($3, '#4f46e5')) RETURNING *`,
+      [name, req.user.id, color || null]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -62,13 +67,17 @@ app.post('/api/calendars', async (req, res) => {
   }
 });
 
-// Editar calendário
 app.put('/api/calendars/:id', async (req, res) => {
-  const { name } = req.body;
+  const { name, color } = req.body;
+  if (color && !COLOR_PATTERN.test(color)) {
+    return res.status(400).json({ error: 'Cor inválida' });
+  }
   try {
     const result = await pool.query(
-      'UPDATE calendars SET name = $1 WHERE id = $2 AND owner_id = $3 RETURNING *',
-      [name, req.params.id, req.user.id]
+      `UPDATE calendars
+       SET name = COALESCE($1, name), color = COALESCE($2, color)
+       WHERE id = $3 AND owner_id = $4 RETURNING *`,
+      [name || null, color || null, req.params.id, req.user.id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Calendário não encontrado' });
@@ -79,6 +88,7 @@ app.put('/api/calendars/:id', async (req, res) => {
     res.status(500).json({ error: 'Erro ao editar calendário' });
   }
 });
+
 
 // Apagar calendário (e os seus eventos)
 app.delete('/api/calendars/:id', async (req, res) => {
@@ -113,6 +123,24 @@ app.get('/api/events/:calendar_id', async (req, res) => {
     const result = await pool.query(
       'SELECT * FROM events WHERE calendar_id = $1 ORDER BY start_time',
       [req.params.calendar_id]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao buscar eventos' });
+  }
+});
+
+// Todos os eventos de todos os calendários do utilizador
+app.get('/api/events', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT e.*
+       FROM events e
+       JOIN calendars c ON c.id = e.calendar_id
+       WHERE c.owner_id = $1
+       ORDER BY e.start_time`,
+      [req.user.id]
     );
     res.json(result.rows);
   } catch (err) {

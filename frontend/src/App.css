@@ -322,3 +322,85 @@ html, body, #root {
   font-size: 0.85rem;
   color: #64748b;
 }
+
+.page {
+  flex-direction: row;
+}
+
+.calendar-wrapper {
+  min-width: 0;
+}
+
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  padding: 16px;
+  background: var(--card-bg);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar h3 {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
+.calendar-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  font-size: 0.9rem;
+}
+
+.calendar-item label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.icon-button {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.icon-button:hover {
+  background: #e2e8f0;
+}
+
+.color-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.color-swatches {
+  display: flex;
+  gap: 6px;
+  padding: 4px 0 8px;
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 0 0 1px var(--border);
+  cursor: pointer;
+  padding: 0;
+}
+
+.sidebar .btn-secondary {
+  margin-top: 8px;
+}

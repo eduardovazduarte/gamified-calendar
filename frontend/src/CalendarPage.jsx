@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import FullCalendar from '@fullcalendar/react';
 import themePlugin from '@fullcalendar/react/themes/classic';
 import dayGridPlugin from '@fullcalendar/react/daygrid';
@@ -23,6 +23,7 @@ const emptyForm = {
   base_rrule: '',
   byday: [],
   bymonthday: '',
+  calendar_id: '',
 };
 
 // A BD devolve "2026-11-03 18:00:00" (sem fuso) -> "2026-11-03T18:00:00"
@@ -45,6 +46,8 @@ const WEEKDAYS = [
   ['MO', 'Seg'], ['TU', 'Ter'], ['WE', 'Qua'], ['TH', 'Qui'],
   ['FR', 'Sex'], ['SA', 'Sáb'], ['SU', 'Dom'],
 ];
+
+const PALETTE = ['#4f46e5', '#16a34a', '#dc2626', '#d97706', '#0891b2', '#c026d3', '#64748b'];
 
 // "1, 10, 40, x" -> "1,10" (só dias válidos, de 1 a 31)
 const cleanMonthDays = (text) =>
@@ -86,7 +89,13 @@ const untilToInput = (until) =>
 
 export default function CalendarPage() {
   const { user, logout } = useAuth();
-  const [calendarId, setCalendarId] = useState(null);
+  const [calendars, setCalendars] = useState([]);
+  const [hidden, setHidden] = useState([]);
+  const [colorFor, setColorFor] = useState(null);
+  const calendarsRef = useRef([]);
+  const hiddenRef = useRef([]);
+  calendarsRef.current = calendars;
+  hiddenRef.current = hidden;
   const [events, setEvents] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState(null);
@@ -94,28 +103,67 @@ export default function CalendarPage() {
   const [occurrence, setOccurrence] = useState('');
   const [askDeleteScope, setAskDeleteScope] = useState(false);
 
-  // Descobre o calendário do utilizador (cria um se ainda não existir)
-  useEffect(() => {
-    api.get('/calendars').then(async (res) => {
-      if (res.data.length > 0) {
-        setCalendarId(res.data[0].id);
-      } else {
-        const created = await api.post('/calendars', { name: 'Calendário Pessoal' });
-        setCalendarId(created.data.id);
-      }
-    });
+  const loadCalendars = useCallback(async () => {
+    const res = await api.get('/calendars');
+    if (res.data.length > 0) {
+      setCalendars(res.data);
+    } else {
+      const created = await api.post('/calendars', { name: 'Calendário Pessoal' });
+      setCalendars([created.data]);
+    }
   }, []);
 
+  // Eventos de todos os calendários; o filtro por calendário é feito no frontend
   const loadEvents = useCallback(() => {
-    if (!calendarId) return;
-    api.get(`/events/${calendarId}`).then((res) => setEvents(res.data));
-  }, [calendarId]);
+    api.get('/events').then((res) => setEvents(res.data));
+  }, []);
 
   useEffect(() => {
+    loadCalendars();
     loadEvents();
-  }, [loadEvents]);
+  }, [loadCalendars, loadEvents]);
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+
+    const toggleCalendar = (id) =>
+    setHidden((h) => (h.includes(id) ? h.filter((x) => x !== id) : [...h, id]));
+
+  const createCalendar = () => {
+    const name = window.prompt('Nome do novo calendário:');
+    if (!name || !name.trim()) return;
+    api
+      .post('/calendars', {
+        name: name.trim(),
+        color: PALETTE[calendars.length % PALETTE.length],
+      })
+      .then(loadCalendars);
+  };
+
+    const renameCalendar = (c) => {
+    const name = window.prompt('Novo nome do calendário:', c.name);
+    if (!name || !name.trim() || name.trim() === c.name) return;
+    api.put(`/calendars/${c.id}`, { name: name.trim() }).then(loadCalendars);
+  };
+
+  const changeCalendarColor = (c, color) => {
+    api.put(`/calendars/${c.id}`, { color }).then(() => {
+      setColorFor(null);
+      loadCalendars();
+    });
+  };
+
+  const deleteCalendar = (c) => {
+    if (calendars.length === 1) {
+      alert('Tens de ter pelo menos um calendário.');
+      return;
+    }
+    if (!window.confirm(`Apagar "${c.name}" e todos os seus eventos? Não dá para desfazer.`)) return;
+    api.delete(`/calendars/${c.id}`).then(() => {
+      setHidden((h) => h.filter((id) => id !== c.id));
+      loadCalendars();
+      loadEvents();
+    });
+  };
 
   const toggleWeekday = (code) =>
     setForm((f) => {
@@ -125,9 +173,15 @@ export default function CalendarPage() {
       return { ...f, byday: WEEKDAYS.map(([c]) => c).filter((c) => set.has(c)) };
     });
 
+  const getDefaultCalendarId = () => {
+    const cals = calendarsRef.current;
+    const cal = cals.find((c) => !hiddenRef.current.includes(c.id)) || cals[0];
+    return cal ? cal.id : '';
+  };
+
   const openNewEvent = () => {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, calendar_id: getDefaultCalendarId() });
     setShowForm(true);
   };
 
@@ -135,6 +189,7 @@ export default function CalendarPage() {
     setEditingId(null);
     setForm({
       ...emptyForm,
+      calendar_id: getDefaultCalendarId(),
       start_time: info.dateStr + 'T09:00',
       end_time: info.dateStr + 'T10:00',
     });
@@ -149,6 +204,7 @@ export default function CalendarPage() {
     setOccurrence(toLocalIso(info.event.start));
     setForm({
       title: event.title,
+      calendar_id: event.calendar_id,
       description: event.description || '',
       start_time: toInputFormat(event.start_time),
       end_time: toInputFormat(event.end_time),
@@ -181,12 +237,13 @@ export default function CalendarPage() {
 
     const request = editingId
       ? api.put(`/events/${editingId}`, payload)
-      : api.post('/events', { calendar_id: calendarId, ...payload });
+      : api.post('/events', { ...payload, calendar_id: Number(form.calendar_id) });
 
     request.then(() => {
       loadEvents();
       closeForm();
-    });
+    })
+      .catch(() => alert('Não foi possível guardar o evento.'));
   };
 
   const deleteEvent = (scope = 'all') => {
@@ -204,14 +261,18 @@ export default function CalendarPage() {
     else deleteEvent();
   };
 
-  const calendarEvents = useMemo(
-    () =>
-      events.map((e) => {
+  const calendarEvents = useMemo(() => {
+    const colors = Object.fromEntries(calendars.map((c) => [c.id, c.color]));
+
+    return events
+      .filter((e) => !hidden.includes(e.calendar_id))
+      .map((e) => {
         const start = toIso(e.start_time);
         const end = toIso(e.end_time);
+        const color = colors[e.calendar_id];
 
         if (!e.rrule) {
-          return { id: String(e.id), title: e.title, start, end };
+          return { id: String(e.id), title: e.title, start, end, color };
         }
 
         const minutes = Math.round((new Date(end) - new Date(start)) / 60000);
@@ -221,13 +282,64 @@ export default function CalendarPage() {
           rrule: `DTSTART:${start.replace(/[-:]/g, '')}\nRRULE:${e.rrule}`,
           exdate: e.exdates || [],
           duration: { minutes },
+          color,
         };
-      }),
-    [events]
-  );
+      });
+  }, [events, calendars, hidden]);
 
   return (
     <div className="page">
+
+      <aside className="sidebar">
+        <h3>Calendários</h3>
+        {calendars.map((c) => (
+          <div key={c.id}>
+            <div className="calendar-item">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!hidden.includes(c.id)}
+                  onChange={() => toggleCalendar(c.id)}
+                  style={{ accentColor: c.color }}
+                />
+                {c.name}
+              </label>
+              <button
+                type="button"
+                className="icon-button"
+                title="Mudar cor"
+                onClick={() => setColorFor(colorFor === c.id ? null : c.id)}
+              >
+                <span className="color-dot" style={{ background: c.color }} />
+              </button>
+              <button type="button" className="icon-button" title="Renomear" onClick={() => renameCalendar(c)}>
+                ✎
+              </button>
+              <button type="button" className="icon-button" title="Apagar" onClick={() => deleteCalendar(c)}>
+                🗑
+              </button>
+            </div>
+
+            {colorFor === c.id && (
+              <div className="color-swatches">
+                {PALETTE.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className="swatch"
+                    style={{ background: color }}
+                    onClick={() => changeCalendarColor(c, color)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        <button type="button" className="btn-secondary" onClick={createCalendar}>
+          + Novo calendário
+        </button>
+      </aside>
+
       <div className="calendar-wrapper">
         <FullCalendar
           plugins={[
@@ -283,6 +395,20 @@ export default function CalendarPage() {
                 value={form.description}
                 onChange={handleChange}
               />
+
+              <label>Calendário
+                <select
+                  name="calendar_id"
+                  value={form.calendar_id}
+                  onChange={handleChange}
+                  disabled={!!editingId}
+                >
+                  {calendars.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </label>
+
               <label>Início
                 <input type="datetime-local" name="start_time" value={form.start_time} onChange={handleChange} required />
               </label>

@@ -12,6 +12,7 @@ CREATE TABLE calendars (
   id SERIAL PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
   owner_id INTEGER REFERENCES users(id),
+  color VARCHAR(7) DEFAULT '#4f46e5',
   created_at TIMESTAMP DEFAULT NOW()
 );
 
