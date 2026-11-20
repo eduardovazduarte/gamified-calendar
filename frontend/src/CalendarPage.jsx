@@ -250,9 +250,10 @@ export default function CalendarPage() {
     setAskDeleteScope(false);
   };
 
-  const handleSubmit = (e) => {
+   const handleSubmit = (e) => {
     e.preventDefault();
     const payload = {
+      calendar_id: Number(form.calendar_id),
       title: form.title,
       description: form.description,
       start_time: form.start_time,
@@ -262,12 +263,13 @@ export default function CalendarPage() {
 
     const request = editingId
       ? api.put(`/events/${editingId}`, payload)
-      : api.post('/events', { ...payload, calendar_id: Number(form.calendar_id) });
+      : api.post('/events', payload);
 
-    request.then(() => {
-      loadEvents();
-      closeForm();
-    })
+    request
+      .then(() => {
+        loadEvents();
+        closeForm();
+      })
       .catch(() => alert('Não foi possível guardar o evento.'));
   };
 
@@ -438,7 +440,6 @@ export default function CalendarPage() {
                   name="calendar_id"
                   value={form.calendar_id}
                   onChange={handleChange}
-                  disabled={!!editingId}
                 >
                   {calendars.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
