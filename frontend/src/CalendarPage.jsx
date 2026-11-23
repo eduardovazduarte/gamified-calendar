@@ -94,7 +94,6 @@ export default function CalendarPage() {
   const [hidden, setHidden] = useState([]);
   const [colorFor, setColorFor] = useState(null);
   const [completions, setCompletions] = useState([]);
-  const [stats, setStats] = useState({ xp: 0, level: 1, xp_per_level: 100 });
   const calendarsRef = useRef([]);
   const hiddenRef = useRef([]);
   const [events, setEvents] = useState([]);
@@ -103,6 +102,15 @@ export default function CalendarPage() {
   const [showForm, setShowForm] = useState(false);
   const [occurrence, setOccurrence] = useState('');
   const [askDeleteScope, setAskDeleteScope] = useState(false);
+
+    const [stats, setStats] = useState({
+    xp: 0,
+    level: 1,
+    xp_per_level: 100,
+    streak: 0,
+    best_streak: 0,
+    done_today: false,
+  });
 
   const loadCalendars = useCallback(() => {
     api.get('/calendars').then(async (res) => {
@@ -162,9 +170,9 @@ export default function CalendarPage() {
       ? api.delete(`/events/${eventId}/complete`, { params: { occurrence: occ } })
       : api.post(`/events/${eventId}/complete`, { occurrence: occ });
     return request
-      .then((res) => {
+      .then(() => {
         loadCompletions();
-        setStats((s) => ({ ...s, xp: res.data.xp, level: res.data.level }));
+        loadStats();
         return true;
       })
       .catch(() => {
@@ -251,7 +259,7 @@ export default function CalendarPage() {
       toggleDone(info.event.id, toLocalIso(info.event.start));
       return;
     }
-    
+
     if (!event) return;
     const rule = parseRrule(event.rrule);
     setEditingId(event.id);
@@ -362,6 +370,24 @@ export default function CalendarPage() {
           <div className="xp-text">
             {stats.xp % stats.xp_per_level} / {stats.xp_per_level} XP · {stats.xp} no total
           </div>
+
+          <div className="streak-row">
+            <span className="streak-flame">🔥</span>
+            <div>
+              <div className="streak-count">
+                {stats.streak} {stats.streak === 1 ? 'dia seguido' : 'dias seguidos'}
+              </div>
+              <div className="streak-note">
+                {stats.done_today
+                  ? 'Hoje já cumpriste'
+                  : stats.streak > 0
+                    ? 'Conclui uma tarefa hoje para manter a sequência'
+                    : 'Conclui uma tarefa para começar'}
+                {' · '}Recorde: {stats.best_streak}
+              </div>
+            </div>
+          </div>
+
         </div>
 
         <h3>Calendários</h3>

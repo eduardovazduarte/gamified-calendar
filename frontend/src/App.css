@@ -485,3 +485,26 @@ html, body, #root {
 .modal-actions button {
   flex: 1;
 }
+
+.streak-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.streak-flame {
+  font-size: 1.6rem;
+}
+
+.streak-count {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.streak-note {
+  font-size: 0.75rem;
+  color: #64748b;
+}

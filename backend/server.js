@@ -334,6 +334,30 @@ async function ownsTask(eventId, userId) {
 const XP_PER_TASK = 10;
 const XP_PER_LEVEL = 100;
 
+//dias com conclusões
+function calcStreaks(days, today) {
+  const toNum = (d) => Math.round(new Date(`${d}T00:00:00Z`).getTime() / 86400000);
+  const nums = days.map(toNum);
+  const todayNum = toNum(today);
+
+  // melhor sequência de sempre
+  let best = 0;
+  let run = 0;
+  for (let i = 0; i < nums.length; i++) {
+    run = i > 0 && nums[i - 1] - nums[i] === 1 ? run + 1 : 1;
+    best = Math.max(best, run);
+  }
+
+  // sequência atual: viva se o último dia foi hoje ou ontem
+  let current = 0;
+  if (nums.length > 0 && (nums[0] === todayNum || nums[0] === todayNum - 1)) {
+    current = 1;
+    for (let i = 1; i < nums.length && nums[i - 1] - nums[i] === 1; i++) current++;
+  }
+
+  return { streak: current, best_streak: best, done_today: nums[0] === todayNum };
+}
+
 // Muda o XP ao utilizador e recalcula o nível
 async function addXp(userId, delta) {
   const result = await pool.query(
@@ -414,13 +438,29 @@ app.delete('/api/events/:id/complete', async (req, res) => {
 });
 
 // XP e nível do utilizador
+// XP, nível e sequências do utilizador
 app.get('/api/stats', requireAuth, async (req, res) => {
   try {
-    const result = await pool.query(
+    const user = await pool.query(
       'SELECT COALESCE(xp, 0) AS xp, COALESCE(level, 1) AS level FROM users WHERE id = $1',
       [req.user.id]
     );
-    res.json({ ...result.rows[0], xp_per_level: XP_PER_LEVEL });
+    const daysResult = await pool.query(
+      `SELECT DISTINCT to_char(ec.completed_at, 'YYYY-MM-DD') AS day
+       FROM event_completions ec
+       JOIN events e ON e.id = ec.event_id
+       JOIN calendars c ON c.id = e.calendar_id
+       WHERE c.owner_id = $1
+       ORDER BY day DESC`,
+      [req.user.id]
+    );
+    const today = (await pool.query("SELECT to_char(NOW(), 'YYYY-MM-DD') AS today")).rows[0].today;
+
+    res.json({
+      ...user.rows[0],
+      xp_per_level: XP_PER_LEVEL,
+      ...calcStreaks(daysResult.rows.map((r) => r.day), today),
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erro ao buscar estatísticas' });
