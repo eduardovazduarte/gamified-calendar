@@ -26,6 +26,7 @@ CREATE TABLE events (
   rrule TEXT,
   exdates TEXT[] DEFAULT '{}',
   type VARCHAR(10) NOT NULL DEFAULT 'event' CHECK (type IN ('event', 'task')),
+  all_day BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMP DEFAULT NOW()
 );
 

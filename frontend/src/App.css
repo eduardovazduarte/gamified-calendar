@@ -508,3 +508,25 @@ html, body, #root {
   font-size: 0.75rem;
   color: #64748b;
 }
+
+.task-dot-hidden {
+  display: none !important;
+}
+
+.list-item-event .done-icon {
+  color: var(--cal-color);
+  font-size: 1.1em;
+}
+
+.modal .check-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.modal .check-row input {
+  width: auto;
+}

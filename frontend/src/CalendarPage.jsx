@@ -25,6 +25,7 @@ const emptyForm = {
   bymonthday: '',
   calendar_id: '',
   type: 'event',
+  all_day: false,
 };
 
 // A BD devolve "2026-11-03 18:00:00" (sem fuso) -> "2026-11-03T18:00:00"
@@ -146,6 +147,11 @@ export default function CalendarPage() {
   const isTask = (eventId) =>
     events.some((e) => String(e.id) === String(eventId) && e.type === 'task');
 
+  const calendarColorOf = (eventId) => {
+    const ev = events.find((e) => String(e.id) === String(eventId));
+    return calendars.find((c) => c.id === ev?.calendar_id)?.color;
+  };
+
   const isDone = (eventId, date) =>
     isTask(eventId) && completions.includes(`${eventId}|${toLocalIso(date)}`);
 
@@ -160,6 +166,27 @@ export default function CalendarPage() {
   }, [loadCalendars, loadEvents, loadCompletions, loadStats]);
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+
+  const toggleAllDay = (e) => {
+    const checked = e.target.checked;
+    setForm((f) => {
+      const day = f.start_time.slice(0, 10);
+      return {
+        ...f,
+        all_day: checked,
+        ...(checked && day ? { start_time: `${day}T00:00`, end_time: `${day}T23:59` } : {}),
+      };
+    });
+  };
+
+  const handleDayChange = (e) => {
+    const day = e.target.value;
+    setForm((f) => ({
+      ...f,
+      start_time: day ? `${day}T00:00` : '',
+      end_time: day ? `${day}T23:59` : '',
+    }));
+  };
 
   const toggleCalendar = (id) =>
   setHidden((h) => (h.includes(id) ? h.filter((x) => x !== id) : [...h, id]));
@@ -268,6 +295,7 @@ export default function CalendarPage() {
       title: event.title,
       calendar_id: event.calendar_id,
       type: event.type || 'event',
+      all_day: !!event.all_day,
       description: event.description || '',
       start_time: toInputFormat(event.start_time),
       end_time: toInputFormat(event.end_time),
@@ -293,6 +321,7 @@ export default function CalendarPage() {
     const payload = {
       calendar_id: Number(form.calendar_id),
       type: form.type,
+      all_day: form.all_day,
       title: form.title,
       description: form.description,
       start_time: form.start_time,
@@ -339,7 +368,10 @@ export default function CalendarPage() {
         const color = colors[e.calendar_id];
 
         if (!e.rrule) {
-          return { id: String(e.id), title: e.title, start, end, color };
+          if (e.all_day) {
+            return { id: String(e.id), title: e.title, start: start.slice(0, 10), allDay: true, color };
+          }
+          return { id: String(e.id), title: e.title, start, end, allDay: false, color };
         }
 
         const minutes = Math.round((new Date(end) - new Date(start)) / 60000);
@@ -348,7 +380,8 @@ export default function CalendarPage() {
           title: e.title,
           rrule: `DTSTART:${start.replace(/[-:]/g, '')}\nRRULE:${e.rrule}`,
           exdate: e.exdates || [],
-          duration: { minutes },
+          duration: e.all_day ? { days: 1 } : { minutes },
+          allDay: !!e.all_day,
           color,
         };
       });
@@ -479,12 +512,20 @@ export default function CalendarPage() {
             const done = task && isDone(arg.event.id, arg.event.start);
             return (
               <>
-                {task && <span className="done-icon">{done ? '✓' : '☐'}</span>}
+                {task && (
+                  <span className="done-icon" style={{ '--cal-color': calendarColorOf(arg.event.id) }}>
+                    {done ? '✓' : '☐'}
+                  </span>
+                )}
                 {arg.timeText && <b>{arg.timeText} </b>}
                 <span>{arg.event.title}</span>
               </>
             );
           }}
+          listItemEventClass="list-item-event"
+          listItemEventBeforeClass={(data) =>
+            isTask(data.event?.id) ? 'task-dot-hidden' : ''
+          }
           eventClick={handleEventClick}
           height="100%"
         />
@@ -528,12 +569,25 @@ export default function CalendarPage() {
                 </select>
               </label>
 
-              <label>Início
-                <input type="datetime-local" name="start_time" value={form.start_time} onChange={handleChange} required />
+              <label className="check-row">
+                <input type="checkbox" checked={form.all_day} onChange={toggleAllDay} />
+                Todo o dia
               </label>
-              <label>Fim
-                <input type="datetime-local" name="end_time" value={form.end_time} onChange={handleChange} required />
-              </label>
+
+              {form.all_day ? (
+                <label>Data
+                  <input type="date" value={form.start_time.slice(0, 10)} onChange={handleDayChange} required />
+                </label>
+              ) : (
+                <>
+                  <label>Início
+                    <input type="datetime-local" name="start_time" value={form.start_time} onChange={handleChange} required />
+                  </label>
+                  <label>Fim
+                    <input type="datetime-local" name="end_time" value={form.end_time} onChange={handleChange} required />
+                  </label>
+                </>
+              )}
 
               <label>Repetir
                 <select name="repeat" value={form.repeat} onChange={handleChange}>

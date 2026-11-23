@@ -161,14 +161,15 @@ app.post('/api/events', async (req, res) => {
   if (!EVENT_TYPES.includes(type)) {
     return res.status(400).json({ error: 'Tipo inválido' });
   }
+  const allDay = req.body.all_day === true;
   try {
     if (!(await ownsCalendar(calendar_id, req.user.id))) {
       return res.status(404).json({ error: 'Calendário não encontrado' });
     }
     const result = await pool.query(
-      `INSERT INTO events (calendar_id, title, description, start_time, end_time, rrule, type)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [calendar_id, title, description, start_time, end_time, rrule, type]
+      `INSERT INTO events (calendar_id, title, description, start_time, end_time, rrule, type, all_day)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+      [calendar_id, title, description, start_time, end_time, rrule, type, allDay]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -176,6 +177,7 @@ app.post('/api/events', async (req, res) => {
     res.status(500).json({ error: 'Erro ao criar evento' });
   }
 });
+
 // Editar evento
 app.put('/api/events/:id', async (req, res) => {
   const { title, description, start_time, end_time } = req.body;
@@ -184,7 +186,7 @@ app.put('/api/events/:id', async (req, res) => {
     return res.status(400).json({ error: 'Regra de repetição inválida' });
   }
 
-  // type e calendar_id são opcionais: se não vierem, mantêm-se os valores atuais
+  // type, calendar_id e all_day são opcionais: se não vierem, mantêm-se os valores atuais
   const type = req.body.type || null;
   if (type !== null && !EVENT_TYPES.includes(type)) {
     return res.status(400).json({ error: 'Tipo inválido' });
@@ -193,6 +195,7 @@ app.put('/api/events/:id', async (req, res) => {
   if (calendarId !== null && !Number.isInteger(calendarId)) {
     return res.status(400).json({ error: 'Calendário inválido' });
   }
+  const allDay = typeof req.body.all_day === 'boolean' ? req.body.all_day : null;
 
   try {
     if (calendarId !== null && !(await ownsCalendar(calendarId, req.user.id))) {
@@ -203,17 +206,18 @@ app.put('/api/events/:id', async (req, res) => {
       `UPDATE events
        SET title = $1, description = $2, start_time = $3, end_time = $4, rrule = $5,
            calendar_id = COALESCE($6, calendar_id),
-           type = COALESCE($7, type)
-       WHERE id = $8
-         AND calendar_id IN (SELECT id FROM calendars WHERE owner_id = $9)
+           type = COALESCE($7, type),
+           all_day = COALESCE($8, all_day)
+       WHERE id = $9
+         AND calendar_id IN (SELECT id FROM calendars WHERE owner_id = $10)
        RETURNING *`,
-      [title, description, start_time, end_time, rrule, calendarId, type, req.params.id, req.user.id]
+      [title, description, start_time, end_time, rrule, calendarId, type, allDay, req.params.id, req.user.id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Evento não encontrado' });
     }
 
-    // um evento não se conclui: se deixou de ser tarefa, apaga as conclusões
+    // um evento não se conclui: se deixou de ser tarefa, apaga as conclusões e o XP delas
     if (result.rows[0].type === 'event') {
       const removed = await pool.query(
         'DELETE FROM event_completions WHERE event_id = $1 RETURNING id',
