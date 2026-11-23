@@ -93,7 +93,8 @@ export default function CalendarPage() {
   const [calendars, setCalendars] = useState([]);
   const [hidden, setHidden] = useState([]);
   const [colorFor, setColorFor] = useState(null);
-  const [completions, setCompletions] = useState([]); // strings "idEvento|ocorrência"
+  const [completions, setCompletions] = useState([]);
+  const [stats, setStats] = useState({ xp: 0, level: 1, xp_per_level: 100 });
   const calendarsRef = useRef([]);
   const hiddenRef = useRef([]);
   const [events, setEvents] = useState([]);
@@ -130,6 +131,10 @@ export default function CalendarPage() {
     );
   }, []);
 
+  const loadStats = useCallback(() => {
+    api.get('/stats').then((res) => setStats(res.data));
+  }, []);
+
   const isTask = (eventId) =>
     events.some((e) => String(e.id) === String(eventId) && e.type === 'task');
 
@@ -143,21 +148,29 @@ export default function CalendarPage() {
     loadCalendars();
     loadEvents();
     loadCompletions();
-  }, [loadCalendars, loadEvents, loadCompletions]);
+    loadStats();
+  }, [loadCalendars, loadEvents, loadCompletions, loadStats]);
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const toggleCalendar = (id) =>
   setHidden((h) => (h.includes(id) ? h.filter((x) => x !== id) : [...h, id]));
 
-    const toggleDone = () => {
-    const done = completions.includes(`${editingId}|${occurrence}`);
+  const toggleDone = (eventId, occ) => {
+    const done = completions.includes(`${eventId}|${occ}`);
     const request = done
-      ? api.delete(`/events/${editingId}/complete`, { params: { occurrence } })
-      : api.post(`/events/${editingId}/complete`, { occurrence });
-    request
-      .then(loadCompletions)
-      .catch(() => alert('Não foi possível atualizar o estado do evento.'));
+      ? api.delete(`/events/${eventId}/complete`, { params: { occurrence: occ } })
+      : api.post(`/events/${eventId}/complete`, { occurrence: occ });
+    return request
+      .then((res) => {
+        loadCompletions();
+        setStats((s) => ({ ...s, xp: res.data.xp, level: res.data.level }));
+        return true;
+      })
+      .catch(() => {
+        alert('Não foi possível atualizar o estado da tarefa.');
+        return false;
+      });
   };
 
   const createCalendar = () => {
@@ -228,8 +241,17 @@ export default function CalendarPage() {
     setShowForm(true);
   };
 
+
+
   const handleEventClick = (info) => {
     const event = events.find((e) => String(e.id) === info.event.id);
+
+    // clique no ícone da tarefa: conclui/desfaz sem abrir o formulário
+    if (info.jsEvent.target.closest('.done-icon') && isTask(info.event.id)) {
+      toggleDone(info.event.id, toLocalIso(info.event.start));
+      return;
+    }
+    
     if (!event) return;
     const rule = parseRrule(event.rrule);
     setEditingId(event.id);
@@ -277,6 +299,7 @@ export default function CalendarPage() {
     request
       .then(() => {
         loadEvents();
+        loadStats();
         closeForm();
       })
       .catch(() => alert('Não foi possível guardar o evento.'));
@@ -327,6 +350,20 @@ export default function CalendarPage() {
     <div className="page">
 
       <aside className="sidebar">
+
+        <div className="level-card">
+          <div className="level-title">Nível {stats.level}</div>
+          <div className="xp-bar">
+            <div
+              className="xp-fill"
+              style={{ width: `${((stats.xp % stats.xp_per_level) / stats.xp_per_level) * 100}%` }}
+            />
+          </div>
+          <div className="xp-text">
+            {stats.xp % stats.xp_per_level} / {stats.xp_per_level} XP · {stats.xp} no total
+          </div>
+        </div>
+
         <h3>Calendários</h3>
         {calendars.map((c) => (
           <div key={c.id}>
@@ -458,23 +495,12 @@ export default function CalendarPage() {
                 </select>
               </label>
 
-                            <label>Tipo
+              <label>Tipo
                 <select name="type" value={form.type} onChange={handleChange}>
                   <option value="event">Evento</option>
                   <option value="task">Tarefa</option>
                 </select>
               </label>
-
-              {editingIsTask && (
-                <label className="done-toggle">
-                  <input
-                    type="checkbox"
-                    checked={completions.includes(`${editingId}|${occurrence}`)}
-                    onChange={toggleDone}
-                  />
-                  {form.base_rrule ? 'Esta ocorrência está concluída' : 'Concluído'}
-                </label>
-              )}
 
               <label>Início
                 <input type="datetime-local" name="start_time" value={form.start_time} onChange={handleChange} required />
@@ -544,7 +570,19 @@ export default function CalendarPage() {
               </div>
             )}
 
-
+              {editingIsTask && (
+                <button
+                  type="button"
+                  className={completions.includes(`${editingId}|${occurrence}`) ? 'btn-secondary btn-block' : 'btn-success btn-block'}
+                  onClick={() => toggleDone(editingId, occurrence).then((ok) => ok && closeForm())}
+                >
+                  {completions.includes(`${editingId}|${occurrence}`)
+                    ? 'Desfazer conclusão'
+                    : form.base_rrule
+                      ? 'Concluir esta ocorrência'
+                      : 'Concluir tarefa'}
+                </button>
+              )}
 
               <div className="modal-actions">
                 <button type="submit" className="btn-primary">

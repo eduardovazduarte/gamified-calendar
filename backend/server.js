@@ -215,7 +215,13 @@ app.put('/api/events/:id', async (req, res) => {
 
     // um evento não se conclui: se deixou de ser tarefa, apaga as conclusões
     if (result.rows[0].type === 'event') {
-      await pool.query('DELETE FROM event_completions WHERE event_id = $1', [result.rows[0].id]);
+      const removed = await pool.query(
+        'DELETE FROM event_completions WHERE event_id = $1 RETURNING id',
+        [result.rows[0].id]
+      );
+      if (removed.rowCount > 0) {
+        await addXp(req.user.id, -removed.rowCount * XP_PER_TASK);
+      }
     }
 
     res.json(result.rows[0]);
@@ -325,6 +331,22 @@ async function ownsTask(eventId, userId) {
   return result.rowCount > 0;
 }
 
+const XP_PER_TASK = 10;
+const XP_PER_LEVEL = 100;
+
+// Muda o XP ao utilizador e recalcula o nível
+async function addXp(userId, delta) {
+  const result = await pool.query(
+    `UPDATE users
+     SET xp = GREATEST(COALESCE(xp, 0) + $1::int, 0),
+         level = (GREATEST(COALESCE(xp, 0) + $1::int, 0) / $2::int) + 1
+     WHERE id = $3
+     RETURNING xp, level`,
+    [delta, XP_PER_LEVEL, userId]
+  );
+  return result.rows[0];
+}
+
 // Todas as conclusões do utilizador
 app.get('/api/completions', requireAuth, async (req, res) => {
   try {
@@ -343,7 +365,7 @@ app.get('/api/completions', requireAuth, async (req, res) => {
   }
 });
 
-// Marcar uma ocorrência como concluída
+// Marcar uma ocorrência de uma tarefa como concluída (dá XP)
 app.post('/api/events/:id/complete', async (req, res) => {
   const { occurrence } = req.body;
   if (!OCCURRENCE_PATTERN.test(occurrence || '')) {
@@ -353,20 +375,23 @@ app.post('/api/events/:id/complete', async (req, res) => {
     if (!(await ownsTask(req.params.id, req.user.id))) {
       return res.status(404).json({ error: 'Tarefa não encontrada' });
     }
-    await pool.query(
+    const inserted = await pool.query(
       `INSERT INTO event_completions (event_id, occurrence)
        VALUES ($1, $2)
-       ON CONFLICT (event_id, occurrence) DO NOTHING`,
+       ON CONFLICT (event_id, occurrence) DO NOTHING
+       RETURNING id`,
       [req.params.id, occurrence]
     );
-    res.status(201).json({ message: 'Evento concluído' });
+    // só dá XP se a conclusão for nova
+    const stats = await addXp(req.user.id, inserted.rowCount > 0 ? XP_PER_TASK : 0);
+    res.status(201).json({ message: 'Tarefa concluída', ...stats });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Erro ao concluir evento' });
+    res.status(500).json({ error: 'Erro ao concluir tarefa' });
   }
 });
 
-// Desmarcar uma ocorrência
+// Desmarcar uma ocorrência (retira o XP)
 app.delete('/api/events/:id/complete', async (req, res) => {
   const occurrence = req.query.occurrence;
   if (!OCCURRENCE_PATTERN.test(occurrence || '')) {
@@ -376,14 +401,29 @@ app.delete('/api/events/:id/complete', async (req, res) => {
     if (!(await ownsEvent(req.params.id, req.user.id))) {
       return res.status(404).json({ error: 'Evento não encontrado' });
     }
-    await pool.query(
-      'DELETE FROM event_completions WHERE event_id = $1 AND occurrence = $2',
+    const removed = await pool.query(
+      'DELETE FROM event_completions WHERE event_id = $1 AND occurrence = $2 RETURNING id',
       [req.params.id, occurrence]
     );
-    res.json({ message: 'Conclusão removida' });
+    const stats = await addXp(req.user.id, removed.rowCount > 0 ? -XP_PER_TASK : 0);
+    res.json({ message: 'Conclusão removida', ...stats });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erro ao remover conclusão' });
+  }
+});
+
+// XP e nível do utilizador
+app.get('/api/stats', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT COALESCE(xp, 0) AS xp, COALESCE(level, 1) AS level FROM users WHERE id = $1',
+      [req.user.id]
+    );
+    res.json({ ...result.rows[0], xp_per_level: XP_PER_LEVEL });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao buscar estatísticas' });
   }
 });
 
