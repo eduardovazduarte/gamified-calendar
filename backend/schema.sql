@@ -25,6 +25,7 @@ CREATE TABLE events (
   end_time TIMESTAMP NOT NULL,
   rrule TEXT,
   exdates TEXT[] DEFAULT '{}',
+  type VARCHAR(10) NOT NULL DEFAULT 'event' CHECK (type IN ('event', 'task')),
   created_at TIMESTAMP DEFAULT NOW()
 );
 

@@ -24,6 +24,7 @@ const emptyForm = {
   byday: [],
   bymonthday: '',
   calendar_id: '',
+  type: 'event',
 };
 
 // A BD devolve "2026-11-03 18:00:00" (sem fuso) -> "2026-11-03T18:00:00"
@@ -129,8 +130,14 @@ export default function CalendarPage() {
     );
   }, []);
 
+  const isTask = (eventId) =>
+    events.some((e) => String(e.id) === String(eventId) && e.type === 'task');
+
   const isDone = (eventId, date) =>
-    completions.includes(`${eventId}|${toLocalIso(date)}`);
+    isTask(eventId) && completions.includes(`${eventId}|${toLocalIso(date)}`);
+
+  const editingIsTask =
+    !!editingId && events.find((e) => e.id === editingId)?.type === 'task';
 
   useEffect(() => {
     loadCalendars();
@@ -230,6 +237,7 @@ export default function CalendarPage() {
     setForm({
       title: event.title,
       calendar_id: event.calendar_id,
+      type: event.type || 'event',
       description: event.description || '',
       start_time: toInputFormat(event.start_time),
       end_time: toInputFormat(event.end_time),
@@ -254,6 +262,7 @@ export default function CalendarPage() {
     e.preventDefault();
     const payload = {
       calendar_id: Number(form.calendar_id),
+      type: form.type,
       title: form.title,
       description: form.description,
       start_time: form.start_time,
@@ -402,15 +411,17 @@ export default function CalendarPage() {
                     eventClass={(arg) =>
             isDone(arg.event.id, arg.event.start) ? ['event-done'] : []
           }
-          eventContent={(arg) => (
-            <>
-              {isDone(arg.event.id, arg.event.start) && (
-                <span className="done-icon">✓</span>
-              )}
-              {arg.timeText && <b>{arg.timeText} </b>}
-              <span>{arg.event.title}</span>
-            </>
-          )}
+          eventContent={(arg) => {
+            const task = isTask(arg.event.id);
+            const done = task && isDone(arg.event.id, arg.event.start);
+            return (
+              <>
+                {task && <span className="done-icon">{done ? '✓' : '☐'}</span>}
+                {arg.timeText && <b>{arg.timeText} </b>}
+                <span>{arg.event.title}</span>
+              </>
+            );
+          }}
           eventClick={handleEventClick}
           height="100%"
         />
@@ -447,7 +458,14 @@ export default function CalendarPage() {
                 </select>
               </label>
 
-              {editingId && (
+                            <label>Tipo
+                <select name="type" value={form.type} onChange={handleChange}>
+                  <option value="event">Evento</option>
+                  <option value="task">Tarefa</option>
+                </select>
+              </label>
+
+              {editingIsTask && (
                 <label className="done-toggle">
                   <input
                     type="checkbox"

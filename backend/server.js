@@ -106,6 +106,7 @@ app.delete('/api/calendars/:id', async (req, res) => {
 });
 
 const RRULE_PATTERN = /^FREQ=(DAILY|WEEKLY|MONTHLY|YEARLY)(;[A-Z]+=[A-Z0-9,+-]+)*$/;
+const EVENT_TYPES = ['event', 'task'];
 
 function normalizeRrule(value) {
   if (value === undefined || value === null || value === '') return null;
@@ -156,14 +157,18 @@ app.post('/api/events', async (req, res) => {
   if (rrule === false) {
     return res.status(400).json({ error: 'Regra de repetição inválida' });
   }
+  const type = req.body.type || 'event';
+  if (!EVENT_TYPES.includes(type)) {
+    return res.status(400).json({ error: 'Tipo inválido' });
+  }
   try {
     if (!(await ownsCalendar(calendar_id, req.user.id))) {
       return res.status(404).json({ error: 'Calendário não encontrado' });
     }
     const result = await pool.query(
-      `INSERT INTO events (calendar_id, title, description, start_time, end_time, rrule)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [calendar_id, title, description, start_time, end_time, rrule]
+      `INSERT INTO events (calendar_id, title, description, start_time, end_time, rrule, type)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [calendar_id, title, description, start_time, end_time, rrule, type]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -171,7 +176,6 @@ app.post('/api/events', async (req, res) => {
     res.status(500).json({ error: 'Erro ao criar evento' });
   }
 });
-
 // Editar evento
 app.put('/api/events/:id', async (req, res) => {
   const { title, description, start_time, end_time } = req.body;
@@ -180,14 +184,17 @@ app.put('/api/events/:id', async (req, res) => {
     return res.status(400).json({ error: 'Regra de repetição inválida' });
   }
 
-  // calendar_id é opcional: se vier, o evento muda para esse calendário
+  // type e calendar_id são opcionais: se não vierem, mantêm-se os valores atuais
+  const type = req.body.type || null;
+  if (type !== null && !EVENT_TYPES.includes(type)) {
+    return res.status(400).json({ error: 'Tipo inválido' });
+  }
   const calendarId = req.body.calendar_id == null ? null : Number(req.body.calendar_id);
   if (calendarId !== null && !Number.isInteger(calendarId)) {
     return res.status(400).json({ error: 'Calendário inválido' });
   }
 
   try {
-    // o calendário de destino também tem de ser do utilizador
     if (calendarId !== null && !(await ownsCalendar(calendarId, req.user.id))) {
       return res.status(404).json({ error: 'Calendário não encontrado' });
     }
@@ -195,15 +202,22 @@ app.put('/api/events/:id', async (req, res) => {
     const result = await pool.query(
       `UPDATE events
        SET title = $1, description = $2, start_time = $3, end_time = $4, rrule = $5,
-           calendar_id = COALESCE($6, calendar_id)
-       WHERE id = $7
-         AND calendar_id IN (SELECT id FROM calendars WHERE owner_id = $8)
+           calendar_id = COALESCE($6, calendar_id),
+           type = COALESCE($7, type)
+       WHERE id = $8
+         AND calendar_id IN (SELECT id FROM calendars WHERE owner_id = $9)
        RETURNING *`,
-      [title, description, start_time, end_time, rrule, calendarId, req.params.id, req.user.id]
+      [title, description, start_time, end_time, rrule, calendarId, type, req.params.id, req.user.id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Evento não encontrado' });
     }
+
+    // um evento não se conclui: se deixou de ser tarefa, apaga as conclusões
+    if (result.rows[0].type === 'event') {
+      await pool.query('DELETE FROM event_completions WHERE event_id = $1', [result.rows[0].id]);
+    }
+
     res.json(result.rows[0]);
   } catch (err) {
     console.error(err);
@@ -300,6 +314,17 @@ async function ownsEvent(eventId, userId) {
   return result.rowCount > 0;
 }
 
+// Verifica se é uma tarefa do utilizador (só as tarefas se concluem)
+async function ownsTask(eventId, userId) {
+  const result = await pool.query(
+    `SELECT 1 FROM events e
+     JOIN calendars c ON c.id = e.calendar_id
+     WHERE e.id = $1 AND c.owner_id = $2 AND e.type = 'task'`,
+    [eventId, userId]
+  );
+  return result.rowCount > 0;
+}
+
 // Todas as conclusões do utilizador
 app.get('/api/completions', requireAuth, async (req, res) => {
   try {
@@ -325,8 +350,8 @@ app.post('/api/events/:id/complete', async (req, res) => {
     return res.status(400).json({ error: 'Ocorrência inválida' });
   }
   try {
-    if (!(await ownsEvent(req.params.id, req.user.id))) {
-      return res.status(404).json({ error: 'Evento não encontrado' });
+    if (!(await ownsTask(req.params.id, req.user.id))) {
+      return res.status(404).json({ error: 'Tarefa não encontrada' });
     }
     await pool.query(
       `INSERT INTO event_completions (event_id, occurrence)
