@@ -191,6 +191,13 @@ export default function CalendarPage() {
   const toggleCalendar = (id) =>
   setHidden((h) => (h.includes(id) ? h.filter((x) => x !== id) : [...h, id]));
 
+  const soloCalendar = (id) => {
+    const onlyThis = calendars.every((c) =>
+      c.id === id ? !hidden.includes(c.id) : hidden.includes(c.id)
+    );
+    setHidden(onlyThis ? [] : calendars.filter((c) => c.id !== id).map((c) => c.id));
+  };
+
   const toggleDone = (eventId, occ) => {
     const done = completions.includes(`${eventId}|${occ}`);
     const request = done
@@ -424,49 +431,77 @@ export default function CalendarPage() {
         </div>
 
         <h3>Calendários</h3>
-        {calendars.map((c) => (
-          <div key={c.id}>
-            <div className="calendar-item">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={!hidden.includes(c.id)}
-                  onChange={() => toggleCalendar(c.id)}
-                  style={{ accentColor: c.color }}
-                />
-                {c.name}
-              </label>
-              <button
-                type="button"
-                className="icon-button"
-                title="Mudar cor"
-                onClick={() => setColorFor(colorFor === c.id ? null : c.id)}
-              >
-                <span className="color-dot" style={{ background: c.color }} />
-              </button>
-              <button type="button" className="icon-button" title="Renomear" onClick={() => renameCalendar(c)}>
-                ✎
-              </button>
-              <button type="button" className="icon-button" title="Apagar" onClick={() => deleteCalendar(c)}>
-                🗑
-              </button>
-            </div>
+                {calendars.map((c) => {
+          const muted = hidden.includes(c.id);
+          const solo =
+            !muted &&
+            calendars.length > 1 &&
+            calendars.every((o) => o.id === c.id || hidden.includes(o.id));
 
-            {colorFor === c.id && (
-              <div className="color-swatches">
-                {PALETTE.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    className="swatch"
-                    style={{ background: color }}
-                    onClick={() => changeCalendarColor(c, color)}
-                  />
-                ))}
+          return (
+            <div key={c.id}>
+              <div className={`calendar-item${muted ? ' muted' : ''}`}>
+                <button
+                  type="button"
+                  className="icon-button"
+                  title="Mudar cor"
+                  onClick={() => setColorFor(colorFor === c.id ? null : c.id)}
+                >
+                  <span className="color-dot" style={{ background: c.color }} />
+                </button>
+
+                <span className="calendar-name" title={c.name}>{c.name}</span>
+
+                <button
+                  type="button"
+                  className={`pill-button${solo ? ' active' : ''}`}
+                  title="Solo: ver só este calendário"
+                  onClick={() => soloCalendar(c.id)}
+                >
+                  S
+                </button>
+                <button
+                  type="button"
+                  className={`pill-button${muted ? ' active' : ''}`}
+                  title={muted ? 'Mostrar este calendário' : 'Silenciar: esconder este calendário'}
+                  onClick={() => toggleCalendar(c.id)}
+                >
+                  M
+                </button>
+
+                <span className="row-actions">
+                  <button type="button" className="icon-button" title="Renomear" onClick={() => renameCalendar(c)}>
+                    ✎
+                  </button>
+                  <button type="button" className="icon-button" title="Apagar" onClick={() => deleteCalendar(c)}>
+                    🗑
+                  </button>
+                </span>
               </div>
-            )}
-          </div>
-        ))}
+
+              {colorFor === c.id && (
+                <div className="color-swatches">
+                  {PALETTE.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      className="swatch"
+                      style={{ background: color }}
+                      onClick={() => changeCalendarColor(c, color)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {hidden.length > 0 && (
+          <button type="button" className="link-button" onClick={() => setHidden([])}>
+            Mostrar todos
+          </button>
+        )}
+        
         <button type="button" className="btn-secondary" onClick={createCalendar}>
           + Novo calendário
         </button>

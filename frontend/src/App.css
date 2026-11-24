@@ -6,16 +6,6 @@
   --card-bg: #ffffff;
   --border: #e2e8f0;
   --text: #1e293b;
-
-
-    --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --danger: #dc2626;
-  --bg: #f8fafc;
-  --card-bg: #ffffff;
-  --border: #e2e8f0;
-  --text: #1e293b;
-
 }
 
 * { box-sizing: border-box; }
@@ -27,10 +17,12 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-#root { width: 100%; }
-
+/* calendário de ponta a ponta */
 .page {
-  padding: 24px;
+  height: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: row;
 }
 
 .topbar {
@@ -46,14 +38,17 @@ body {
 }
 
 .calendar-wrapper {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 8px;
 }
 
-.btn-primary, .btn-secondary, .btn-danger {
+.btn-primary, .btn-secondary, .btn-danger, .btn-success {
   border: none;
   border-radius: 8px;
   padding: 10px 16px;
@@ -66,6 +61,8 @@ body {
 .btn-primary:hover { background: var(--primary-hover); }
 .btn-secondary { background: #e2e8f0; color: var(--text); }
 .btn-danger { background: var(--danger); color: white; }
+.btn-success { background: #16a34a; color: white; }
+.btn-success:hover { background: #15803d; }
 
 .modal-overlay {
   position: fixed;
@@ -93,13 +90,16 @@ body {
   gap: 12px;
 }
 
-.modal input {
+.modal input,
+.modal select {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 0.9rem;
   width: 100%;
 }
+
+.modal select { background: white; }
 
 .modal label {
   font-size: 0.85rem;
@@ -114,27 +114,12 @@ html, body, #root {
   width: 100%;
 }
 
-.page {
-  height: 100%;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-}
-
-.calendar-wrapper {
-  flex: 1;
-  min-height: 0;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
 .modal-actions {
   display: flex;
   gap: 8px;
   margin-top: 8px;
 }
+
 .my-button {
   background: #f8fafc !important;
   color: #000 !important;
@@ -153,18 +138,6 @@ html, body, #root {
 .my-button:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-/* calendário de ponta a ponta */
-.page {
-  padding: 0;
-}
-
-.calendar-wrapper {
-  border-radius: 0;
-  border: none;
-  box-shadow: none;
-  padding: 8px;
 }
 
 .my-day-top {
@@ -268,14 +241,6 @@ html, body, #root {
   padding: 40px;
 }
 
-.modal select {
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 0.9rem;
-  width: 100%;
-  background: white;
-}
 /* seletor de dias da semana */
 .modal .weekday-picker {
   display: flex;
@@ -319,14 +284,6 @@ html, body, #root {
   margin: 0;
   font-size: 0.85rem;
   color: #64748b;
-}
-
-.page {
-  flex-direction: row;
-}
-
-.calendar-wrapper {
-  min-width: 0;
 }
 
 .sidebar {
@@ -424,8 +381,13 @@ html, body, #root {
 .done-icon {
   display: inline-block;
   margin-right: 4px;
+  padding: 0 2px;
+  border-radius: 3px;
   font-weight: 700;
+  cursor: pointer;
 }
+
+.done-icon:hover { background: rgba(255, 255, 255, 0.35); }
 
 .level-card {
   padding: 12px;
@@ -459,28 +421,7 @@ html, body, #root {
   color: #64748b;
 }
 
-.btn-success {
-  border: none;
-  border-radius: 8px;
-  padding: 10px 16px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  font-weight: 500;
-  background: #16a34a;
-  color: white;
-}
-
-.btn-success:hover { background: #15803d; }
-
 .btn-block { width: 100%; }
-
-.done-icon {
-  cursor: pointer;
-  padding: 0 2px;
-  border-radius: 3px;
-}
-
-.done-icon:hover { background: rgba(255, 255, 255, 0.35); }
 
 .modal-actions button {
   flex: 1;
@@ -529,4 +470,52 @@ html, body, #root {
 
 .modal .check-row input {
   width: auto;
+}
+
+.calendar-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-item.muted .calendar-name {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.calendar-item.muted .color-dot {
+  opacity: 0.35;
+}
+
+.pill-button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pill-button:hover { background: #e2e8f0; }
+
+.pill-button.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+.row-actions {
+  display: inline-flex;
+  transition: opacity 0.15s;
+}
+
+.sidebar .link-button {
+  align-self: flex-start;
+  margin-top: 4px;
 }
